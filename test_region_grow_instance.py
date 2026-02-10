@@ -2,8 +2,7 @@ from cmath import nan
 import numpy as np
 import h5py
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-import tensorflow as tf
+from tqdm import tqdm
 import sys
 from class_util import classes_s3dis, classes_nyu40, classes_kitti, class_to_id, class_to_color_rgb
 import itertools
@@ -18,6 +17,7 @@ import time
 import scipy.special
 import glob
 import argparse
+import torch
 
 import pointcloud_utils as utils
 
@@ -57,66 +57,29 @@ comp_time_analysis = {
 }
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--scan_filename', type=str, required=True)
-parser.add_argument('--results_dir', type=str, required=True)
-parser.add_argument('--model_path', type=str, required=True)
-parser.add_argument('--transformer', action='store_true', default=False)
 parser.add_argument('--num_points', type=int, default=512)
 parser.add_argument('--downsample', type=float, default=0)
 parser.add_argument('--scale', type=float, default=1)
 args = parser.parse_args()
 
 if args.scale == 0:
-    print("Scale cannot be 0 as this entail zero division.  Exiting.")
-    exit()
+	print("Scale cannot be 0 as this entail zero division.  Exiting.")
+	exit()
 
-SCAN_NAME = args.scan_filename
-RESULTS_DIR = args.results_dir
-TRANSFORMER = args.transformer
+SCAN_NAME = "data/rgb/20.ply"
+RESULTS_DIR = "results"
+TRANSFORMER = True
 NUM_INLIER_POINT = NUM_NEIGHBOR_POINT = args.num_points
 
-MODEL_PATH = args.model_path
 
-	# elif sys.argv[i]=='--save_results':
-	# 	save_results = True
-# for i in range(len(sys.argv)):
-#     if sys.argv[i]=='--scan_filename':
-#         SCAN_NAME = str(sys.argv[i+1])
-#     elif sys.argv[i]=='--results_dir':
-#         RESULTS_DIR = str(sys.argv[i+1])
-#     elif sys.argv[i]=='--resolution':
-#         resolution = float(sys.argv[i+1])
-#     elif sys.argv[i]=='--lite':
-#         LITE = int(sys.argv[i+1])
-#     elif sys.argv[i]=='--transformer':
-#         TRANSFORMER = True
-#     elif sys.argv[i]=='--model_path':
-#         MODEL_PATH = str(sys.argv[i+1])
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-config = None
-sess = None
-saver = None
+from ptv3_util import *
 
-net = None
-
-if TRANSFORMER:
-    from lrg_transformer import *
-
-    net = LrgNet_Keras(1, 1, NUM_INLIER_POINT, NUM_NEIGHBOR_POINT, FEATURE_SIZE, LITE)
-    net.load_weights(MODEL_PATH).expect_partial()
-else:
-    from learn_region_grow_util import *
-
-    tf.compat.v1.reset_default_graph()
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    config.allow_soft_placement = True
-    config.log_device_placement = False
-    sess = tf.compat.v1.Session(config=config)
-
-    net = LrgNet(1, 1, NUM_INLIER_POINT, NUM_NEIGHBOR_POINT, FEATURE_SIZE, LITE)
-    saver = tf.compat.v1.train.Saver()
-    saver.restore(sess, MODEL_PATH)
+net = RegionTransformerPTv3(1, 1, NUM_INLIER_POINT, NUM_NEIGHBOR_POINT, FEATURE_SIZE).to(device)
+net.eval()
+checkpoint = torch.load("model_checkpoint.pth")
+net.load_state_dict(checkpoint['model_state_dict'])
 
 print("Loading pointcloud.")
 
@@ -134,11 +97,11 @@ down_sample = args.downsample
 idx_list = None
 
 if down_sample != 0:
-    print("Downsampling.")
-    cloud, _, idx_list = source_cloud.voxel_down_sample_and_trace(down_sample, source_cloud.get_min_bound(), source_cloud.get_max_bound())
-    print(f"Cloud point count after downsample:  {np.asarray(cloud.points).shape[0]}")
+	print("Downsampling.")
+	cloud, _, idx_list = source_cloud.voxel_down_sample_and_trace(down_sample, source_cloud.get_min_bound(), source_cloud.get_max_bound())
+	print(f"Cloud point count after downsample:  {np.asarray(cloud.points).shape[0]}")
 else:
-    cloud = source_cloud
+	cloud = source_cloud
 
 cloud_center = cloud.get_center()
 cloud = cloud.translate(-1*cloud_center, relative=True)
@@ -148,9 +111,9 @@ print(f"Cloud max bound:  {cloud.get_max_bound()}")
 
 scale = args.scale
 if scale != 1:
-    cloud = cloud.scale(scale, cloud.get_center())
-    print(f"Cloud min bound after scale:  {cloud.get_min_bound()}")
-    print(f"Cloud max bound after scale:  {cloud.get_max_bound()}")
+	cloud = cloud.scale(scale, cloud.get_center())
+	print(f"Cloud min bound after scale:  {cloud.get_min_bound()}")
+	print(f"Cloud max bound after scale:  {cloud.get_max_bound()}")
 
 cloud = np.asarray(np.concatenate((np.asarray(cloud.points), np.asarray(cloud.colors)), axis=1))
 
@@ -168,14 +131,14 @@ unequalized_idx = []
 equalized_map = {}
 normal_grid = {}
 for i in range(len(unequalized_points)):
-    k = tuple(np.round(unequalized_points[i,:3]/resolution).astype(int))
-    if not k in equalized_map:
-        equalized_map[k] = len(equalized_idx)
-        equalized_idx.append(i)
-    unequalized_idx.append(equalized_map[k])
-    if not k in normal_grid:
-        normal_grid[k] = []
-    normal_grid[k].append(i)
+	k = tuple(np.round(unequalized_points[i,:3]/resolution).astype(int))
+	if not k in equalized_map:
+		equalized_map[k] = len(equalized_idx)
+		equalized_idx.append(i)
+	unequalized_idx.append(equalized_map[k])
+	if not k in normal_grid:
+		normal_grid[k] = []
+	normal_grid[k].append(i)
 points = unequalized_points[equalized_idx]
 # obj_id = obj_id[equalized_idx]
 # cls_id = cls_id[equalized_idx]
@@ -188,36 +151,36 @@ normals = []
 curvatures = []
 # deletes = []
 for i in range(len(points)):
-    k = tuple(np.round(points[i,:3]/resolution).astype(int))
-    neighbors = []
-    for offset in itertools.product([-1,0,1],[-1,0,1],[-1,0,1]):
-        kk = (k[0]+offset[0], k[1]+offset[1], k[2]+offset[2])
-        if kk in normal_grid:
-            neighbors.extend(normal_grid[kk])
-    accA = np.zeros((3,3))
-    accB = np.zeros(3)
-    for n in neighbors:
-        p = unequalized_points[n,:3]
-        accA += np.outer(p,p)
-        accB += p
-    cov = accA / len(neighbors) - np.outer(accB, accB) / len(neighbors)**2
-    U,S,V = np.linalg.svd(cov)
-    curvature = S[2] / (S[0] + S[1] + S[2])
+	k = tuple(np.round(points[i,:3]/resolution).astype(int))
+	neighbors = []
+	for offset in itertools.product([-1,0,1],[-1,0,1],[-1,0,1]):
+		kk = (k[0]+offset[0], k[1]+offset[1], k[2]+offset[2])
+		if kk in normal_grid:
+			neighbors.extend(normal_grid[kk])
+	accA = np.zeros((3,3))
+	accB = np.zeros(3)
+	for n in neighbors:
+		p = unequalized_points[n,:3]
+		accA += np.outer(p,p)
+		accB += p
+	cov = accA / len(neighbors) - np.outer(accB, accB) / len(neighbors)**2
+	U,S,V = np.linalg.svd(cov)
+	curvature = S[2] / (S[0] + S[1] + S[2])
 
-    normals.append(np.fabs(V[2]))
-    curvatures.append(np.fabs(curvature))
+	normals.append(np.fabs(V[2]))
+	curvatures.append(np.fabs(curvature))
 
 curvatures = np.array(curvatures)
 curvatures = curvatures/np.nanmax(curvatures)
 normals = np.array(normals)
 if FEATURE_SIZE==6:
-    points = np.hstack((xyz, room_coordinates)).astype(np.float32)
+	points = np.hstack((xyz, room_coordinates)).astype(np.float32)
 elif FEATURE_SIZE==9:
-    points = np.hstack((xyz, room_coordinates, rgb)).astype(np.float32)
+	points = np.hstack((xyz, room_coordinates, rgb)).astype(np.float32)
 elif FEATURE_SIZE==12:
-    points = np.hstack((xyz, room_coordinates, rgb, normals)).astype(np.float32)
+	points = np.hstack((xyz, room_coordinates, rgb, normals)).astype(np.float32)
 else:
-    points = np.hstack((xyz, room_coordinates, rgb, normals, curvatures.reshape(-1,1))).astype(np.float32)
+	points = np.hstack((xyz, room_coordinates, rgb, normals, curvatures.reshape(-1,1))).astype(np.float32)
 
 comp_time_analysis['feature'].append(time.time() - t1)
 
@@ -232,126 +195,147 @@ input_remove = np.zeros((1, NUM_INLIER_POINT), dtype=np.int32)
 order = np.argsort(curvatures)
 #iterate over each object in the room
 #		for seed_id in range(len(point_voxels)):
-for seed_id in np.arange(len(points))[order]:
-    if visited[seed_id]:
-        continue
-    seed_voxel = point_voxels[seed_id]
-    currentMask = np.zeros(len(points), dtype=bool)
-    currentMask[seed_id] = True
-    minDims = seed_voxel.copy()
-    maxDims = seed_voxel.copy()
-    seqMinDims = minDims
-    seqMaxDims = maxDims
-    steps = 0
-    stuck = 0
-    maskLogProb = 0
+net.eval()
+for seed_id in tqdm(np.arange(len(points))[order]):
+	if visited[seed_id]:
+		continue
+	seed_voxel = point_voxels[seed_id]
+	currentMask = np.zeros(len(points), dtype=bool)
+	currentMask[seed_id] = True
+	minDims = seed_voxel.copy()
+	maxDims = seed_voxel.copy()
+	seqMinDims = minDims
+	seqMaxDims = maxDims
+	steps = 0
+	stuck = 0
+	maskLogProb = 0
 
-    #perform region growing
-    while True:
+	#perform region growing
+	while True:
 
-        def stop_growing(reason):
-            global cluster_id, start_time
-            visited[currentMask] = True
-            if np.sum(currentMask) > cluster_threshold:
-                cluster_label[currentMask] = cluster_id
-                cluster_id += 1
+		def stop_growing(reason):
+			global cluster_id, start_time
+			visited[currentMask] = True
+			if np.sum(currentMask) > cluster_threshold:
+				cluster_label[currentMask] = cluster_id
+				cluster_id += 1
 
-        #determine the current points and the neighboring points
-        t = time.time()
-        currentPoints = points[currentMask, :].copy()
-        newMinDims = minDims.copy()	
-        newMaxDims = maxDims.copy()	
-        newMinDims -= 1
-        newMaxDims += 1
-        mask = np.logical_and(np.all(point_voxels>=newMinDims,axis=1), np.all(point_voxels<=newMaxDims, axis=1))
-        mask = np.logical_and(mask, np.logical_not(currentMask))
-        mask = np.logical_and(mask, np.logical_not(visited))
-        expandPoints = points[mask, :].copy()
-        
-        if len(expandPoints)==0: #no neighbors (early termination)
-            stop_growing('noneighbor')
-            break
+		#determine the current points and the neighboring points
+		t = time.time()
+		currentPoints = points[currentMask, :].copy()
+		newMinDims = minDims.copy()	
+		newMaxDims = maxDims.copy()	
+		newMinDims -= 1
+		newMaxDims += 1
+		mask = np.logical_and(np.all(point_voxels>=newMinDims,axis=1), np.all(point_voxels<=newMaxDims, axis=1))
+		mask = np.logical_and(mask, np.logical_not(currentMask))
+		mask = np.logical_and(mask, np.logical_not(visited))
+		expandPoints = points[mask, :].copy()
+		
+		if len(expandPoints)==0: #no neighbors (early termination)
+			stop_growing('noneighbor')
+			break
 
-        if len(currentPoints) >= NUM_INLIER_POINT:
-            subset = np.random.choice(len(currentPoints), NUM_INLIER_POINT, replace=False)
-        else:
-            subset = list(range(len(currentPoints))) + list(np.random.choice(len(currentPoints), NUM_INLIER_POINT-len(currentPoints), replace=True))
-        center = np.median(currentPoints, axis=0)
-        expandPoints = np.array(expandPoints)
-        expandPoints[:,:2] -= center[:2]
-        expandPoints[:,6:] -= center[6:]
-        inlier_points[0,:,:] = currentPoints[subset, :]
-        inlier_points[0,:,:2] -= center[:2]
-        inlier_points[0,:,6:] -= center[6:]
-        if len(expandPoints) >= NUM_NEIGHBOR_POINT:
-            subset = np.random.choice(len(expandPoints), NUM_NEIGHBOR_POINT, replace=False)
-        else:
-            subset = list(range(len(expandPoints))) + list(np.random.choice(len(expandPoints), NUM_NEIGHBOR_POINT-len(expandPoints), replace=True))
-        neighbor_points[0,:,:] = np.array(expandPoints)[subset, :]
-        comp_time_analysis['current_neighbor'].append(time.time() - t)
-        t = time.time()
+		if len(currentPoints) >= NUM_INLIER_POINT:
+			subset = np.random.choice(len(currentPoints), NUM_INLIER_POINT, replace=False)
+		else:
+			subset = list(range(len(currentPoints))) + list(np.random.choice(len(currentPoints), NUM_INLIER_POINT-len(currentPoints), replace=True))
+		center = np.median(currentPoints, axis=0)
+		expandPoints = np.array(expandPoints)
+		expandPoints[:,:2] -= center[:2]
+		expandPoints[:,6:] -= center[6:]
+		inlier_points[0,:,:] = currentPoints[subset, :]
+		inlier_points[0,:,:2] -= center[:2]
+		inlier_points[0,:,6:] -= center[6:]
+		if len(expandPoints) >= NUM_NEIGHBOR_POINT:
+			subset = np.random.choice(len(expandPoints), NUM_NEIGHBOR_POINT, replace=False)
+		else:
+			subset = list(range(len(expandPoints))) + list(np.random.choice(len(expandPoints), NUM_NEIGHBOR_POINT-len(expandPoints), replace=True))
+		neighbor_points[0,:,:] = np.array(expandPoints)[subset, :]
+		comp_time_analysis['current_neighbor'].append(time.time() - t)
+		t = time.time()
 
-        #   Add dummy input_add/remove.
-        #   batch=1, seq_length=1.
-        if TRANSFORMER:
-            rmv, add = net([inlier_points, neighbor_points])
-        else:
-            input_add = np.zeros(dtype=np.int32, shape=(1, NUM_NEIGHBOR_POINT))
-            input_remove = np.zeros(dtype=np.int32, shape=(1, NUM_INLIER_POINT))
+		#   Add dummy input_add/remove.
+		#   batch=1, seq_length=1.
+		inlier_tensor = torch.FloatTensor(inlier_points).to(device)
+		inlier_coords = inlier_tensor[:,:,:3].reshape(-1, 3)
+		inlier_grid_coords = inlier_tensor[:,:,3:6].reshape(-1, 3)
+		inlier_feats = inlier_tensor[:,:,6:FEATURE_SIZE].reshape(-1, FEATURE_SIZE-6)
+		inlier_offsets = torch.tensor([(i+1)*NUM_INLIER_POINT for i in range(1)]).to(device)
+		inlier_data = {
+			'coord': inlier_grid_coords,
+			#'grid_coord': inlier_grid_coords,
+			'feat': inlier_feats,
+			'offset': inlier_offsets,
+			'grid_size':  0.01
+		}
 
-            ls, add, add_acc, rmv,rmv_acc = sess.run([net.loss, net.add_output, net.add_acc, net.remove_output, net.remove_acc],
-                {net.inlier_pl:inlier_points, net.neighbor_pl:neighbor_points, net.add_mask_pl:input_add, net.remove_mask_pl:input_remove})
+		neighbor_tensor = torch.FloatTensor(neighbor_points).to(device)
+		neighbor_coords = neighbor_tensor[:,:,:3].reshape(-1, 3)
+		neighbor_grid_coords = neighbor_tensor[:,:,3:6].reshape(-1, 3)
+		neighbor_feats = neighbor_tensor[:,:,6:FEATURE_SIZE].reshape(-1, FEATURE_SIZE-6)
+		neighbor_offsets = torch.tensor([(i+1)*NUM_NEIGHBOR_POINT for i in range(1)]).to(device)
+		neighbor_data = {
+			'coord': neighbor_grid_coords,
+			#'grid_coord': neighbor_grid_coords,
+			'feat': neighbor_feats,
+			'offset': neighbor_offsets,
+			'grid_size':  0.01
+		}	
 
-        comp_time_analysis['current_net'].append(time.time() - t)
-        t = time.time()
+		rmv, add = net(inlier_data, neighbor_data)
 
-        add_conf = scipy.special.softmax(add[0], axis=-1)[:,1]
-        rmv_conf = scipy.special.softmax(rmv[0], axis=-1)[:,1]
-        add_mask = np.random.random(len(add_conf)) < add_conf
-        rmv_mask = np.random.random(len(rmv_conf)) < rmv_conf
-        addPoints = neighbor_points[0,:,:][add_mask]
-        addPoints[:,:2] += center[:2]
-        addVoxels = np.round(addPoints[:,:3]/resolution).astype(int)
-        addSet = set([tuple(p) for p in addVoxels])
-        rmvPoints = inlier_points[0,:,:][rmv_mask]
-        rmvPoints[:,:2] += center[:2]
-        rmvVoxels = np.round(rmvPoints[:,:3]/resolution).astype(int)
-        rmvSet = set([tuple(p) for p in rmvVoxels])
-        updated = False
-        for i in range(len(point_voxels)):
-            if not currentMask[i] and tuple(point_voxels[i]) in addSet:
-                currentMask[i] = True
-                updated = True
-            if tuple(point_voxels[i]) in rmvSet:
-                currentMask[i] = False
-        steps += 1
-        comp_time_analysis['current_inlier'].append(time.time() - t)
 
-        if updated: #continue growing
-            minDims = point_voxels[currentMask, :].min(axis=0)
-            maxDims = point_voxels[currentMask, :].max(axis=0)
-            if not np.any(minDims<seqMinDims) and not np.any(maxDims>seqMaxDims):
-                if stuck >= 1:
-                    stop_growing('stuck')
-                    break
-                else:
-                    stuck += 1
-            else:
-                stuck = 0
-            seqMinDims = np.minimum(seqMinDims, minDims)
-            seqMaxDims = np.maximum(seqMaxDims, maxDims)
-        else: #no matching neighbors (early termination)
-            stop_growing('noexpand')
-            break
+		comp_time_analysis['current_net'].append(time.time() - t)
+		t = time.time()
+
+		add_conf = scipy.special.expit(add.cpu().detach().numpy())
+		rmv_conf = scipy.special.expit(rmv.cpu().detach().numpy())
+		add_mask = np.random.random(len(add_conf)) < add_conf
+		rmv_mask = np.random.random(len(rmv_conf)) < rmv_conf
+		addPoints = neighbor_points[0,:,:][add_mask]
+		addPoints[:,:2] += center[:2]
+		addVoxels = np.round(addPoints[:,:3]/resolution).astype(int)
+		addSet = set([tuple(p) for p in addVoxels])
+		rmvPoints = inlier_points[0,:,:][rmv_mask]
+		rmvPoints[:,:2] += center[:2]
+		rmvVoxels = np.round(rmvPoints[:,:3]/resolution).astype(int)
+		rmvSet = set([tuple(p) for p in rmvVoxels])
+		updated = False
+		for i in range(len(point_voxels)):
+			if not currentMask[i] and tuple(point_voxels[i]) in addSet:
+				currentMask[i] = True
+				updated = True
+			if tuple(point_voxels[i]) in rmvSet:
+				currentMask[i] = False
+		steps += 1
+		comp_time_analysis['current_inlier'].append(time.time() - t)
+
+		if updated: #continue growing
+			minDims = point_voxels[currentMask, :].min(axis=0)
+			maxDims = point_voxels[currentMask, :].max(axis=0)
+			if not np.any(minDims<seqMinDims) and not np.any(maxDims>seqMaxDims):
+				if stuck >= 1:
+					stop_growing('stuck')
+					break
+				else:
+					stuck += 1
+			else:
+				stuck = 0
+			seqMinDims = np.minimum(seqMinDims, minDims)
+			seqMaxDims = np.maximum(seqMaxDims, maxDims)
+		else: #no matching neighbors (early termination)
+			stop_growing('noexpand')
+			break
 
 #fill in points with no labels
 nonzero_idx = np.nonzero(cluster_label)[0]
 nonzero_points = points[nonzero_idx, :]
 filled_cluster_label = cluster_label.copy()
 for i in np.nonzero(cluster_label==0)[0]:
-    d = np.sum((nonzero_points - points[i])**2, axis=1)
-    closest_idx = np.argmin(d)
-    filled_cluster_label[i] = cluster_label[nonzero_idx[closest_idx]]
+	d = np.sum((nonzero_points - points[i])**2, axis=1)
+	closest_idx = np.argmin(d)
+	filled_cluster_label[i] = cluster_label[nonzero_idx[closest_idx]]
 cluster_label = filled_cluster_label
 
 #save point cloud results to file
@@ -367,7 +351,7 @@ result_cloud = o3d.geometry.PointCloud(result_points)
 result_cloud.colors = result_colors
 
 if scale != 1:
-    result_cloud = result_cloud.scale(1/scale, result_cloud.get_center())
+	result_cloud = result_cloud.scale(1/scale, result_cloud.get_center())
 
 result_cloud = result_cloud.translate(cloud_center, relative=True)
 
@@ -378,7 +362,7 @@ o3d.visualization.draw_geometries([result_cloud])
 
 proceed = input("Enter P to proceed to refinement: ")
 if proceed.lower() != 'p':
-    exit()
+	exit()
 
 print("Segmentation Refinement.  Press Q to exit and save objects.")
 result_cloud = utils.merge_segments(result_cloud)
@@ -389,16 +373,16 @@ unique_colors = np.unique(result_points[:, 3:6], axis=0)
 print(f"Number of objects detected: {unique_colors.shape[0]}")
 
 if idx_list is not None:
-    print("Begin recoloring.")
-    for i in range(len(idx_list)):
-        idx = idx_list[i]
-        color = result_points[i, 3:]
+	print("Begin recoloring.")
+	for i in range(len(idx_list)):
+		idx = idx_list[i]
+		color = result_points[i, 3:]
 
-        source_cloud_np[idx, 3:] = color
+		source_cloud_np[idx, 3:] = color
 
-    result_cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(source_cloud_np[:, 0:3]))
-    result_cloud.colors = o3d.utility.Vector3dVector(source_cloud_np[:, 3:6])
-    result_points = np.asarray(np.concatenate((np.asarray(result_cloud.points), np.asarray(result_cloud.colors)), axis=1))
+	result_cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(source_cloud_np[:, 0:3]))
+	result_cloud.colors = o3d.utility.Vector3dVector(source_cloud_np[:, 3:6])
+	result_points = np.asarray(np.concatenate((np.asarray(result_cloud.points), np.asarray(result_cloud.colors)), axis=1))
 
 print("Segmenting and saving objects.")
 viz = o3d.visualization.Visualizer()
@@ -413,17 +397,17 @@ rot = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
 
 #   Extract individual objects for separate file writing.
 for i in range(unique_colors.shape[0]):
-    object_idx = np.where((result_points[:, 3:6] == unique_colors[i]).all(axis=1))[0]
-    object_points = result_points[object_idx, :3]
-    object_colors = source_colors[object_idx]
+	object_idx = np.where((result_points[:, 3:6] == unique_colors[i]).all(axis=1))[0]
+	object_points = result_points[object_idx, :3]
+	object_colors = source_colors[object_idx]
 
-    object_cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(object_points))
-    object_cloud.colors = o3d.utility.Vector3dVector(object_colors)
+	object_cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(object_points))
+	object_cloud.colors = o3d.utility.Vector3dVector(object_colors)
 
-    object_cloud = object_cloud.rotate(rot)
+	object_cloud = object_cloud.rotate(rot)
 
-    viz.add_geometry(object_cloud)
-    viz.capture_screen_image(os.path.join(seg_results_path, f"object_{i}.png"), do_render=True)
-    viz.remove_geometry(object_cloud)
+	viz.add_geometry(object_cloud)
+	viz.capture_screen_image(os.path.join(seg_results_path, f"object_{i}.png"), do_render=True)
+	viz.remove_geometry(object_cloud)
 
-    o3d.io.write_point_cloud(os.path.join(seg_results_path, f"object_{i}.pts"), object_cloud)
+	o3d.io.write_point_cloud(os.path.join(seg_results_path, f"object_{i}.pts"), object_cloud)
