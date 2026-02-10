@@ -71,7 +71,7 @@ class RegionTransformerPTv3(nn.Module):
 		remove_feats = features[:, :self.num_points, :]
 		add_feats = features[:, self.num_points:, :]
 
-		remove_mask_logits = self.remove_mask(remove_feats).squeeze(-1)
-		add_mask_logits = self.add_mask(add_feats).squeeze(-1)
+		remove_mask_logits = self.remove_mask(remove_feats).squeeze()
+		add_mask_logits = self.add_mask(add_feats).squeeze()
 
 		return remove_mask_logits, add_mask_logits
