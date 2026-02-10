@@ -13,11 +13,11 @@ MODEL_PATH = None
 BATCH_SIZE = 32
 NUM_INLIER_POINT = 512
 NUM_NEIGHBOR_POINT = 512
-CURRENT_EPOCH = 0
+CURRENT_EPOCH = 3
 MAX_EPOCH = 64
 TRANSFORMER = False
 VAL_STEP = 7
-TRAIN_AREA = ['1']#,'2','3','scannet','4','5','6']
+TRAIN_AREA = ['scannet']#,'2','3','scannet','4','5','6']
 VAL_AREA = None
 #	Set to 12 as curvatures may be nan in scan data.
 FEATURE_SIZE = 12
@@ -37,10 +37,10 @@ torch.compile(net)
 
 optimizer = torch.optim.AdamW(net.parameters(), lr=1e-4)
 criterion = nn.BCEWithLogitsLoss()
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16, eta_min=0)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=64, eta_min=0)
 
 if CURRENT_EPOCH != 0:
-	checkpoint = torch.load("models/regiontransformer_model.pth")
+	checkpoint = torch.load("model_checkpoint.pth")
 	net.load_state_dict(checkpoint['model_state_dict'])
 	optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 	print(f"Loaded checkpoint from epoch {CURRENT_EPOCH}")
@@ -139,10 +139,6 @@ for epoch in range(CURRENT_EPOCH, MAX_EPOCH):
 	input_remove = numpy.zeros((BATCH_SIZE, NUM_INLIER_POINT), dtype=numpy.int32)
 
 	loss_arr = []
-	add_prc_arr = []
-	add_rcl_arr = []
-	rmv_prc_arr = []
-	rmv_rcl_arr = []
 	num_batches = int(len(train_inlier_points) / BATCH_SIZE)
 	start_time = time.time()
 	net.train()
@@ -201,11 +197,10 @@ for epoch in range(CURRENT_EPOCH, MAX_EPOCH):
 		optimizer.step()
 
 		loss_arr.append(loss.item())
-		print("Batch %d Total_loss %.2f Loss %.2f"%(batch_id, numpy.mean(loss_arr), loss.item()))
+		#print("Batch %d Total_loss %.2f Loss %.2f"%(batch_id, numpy.mean(loss_arr), loss.item()))
 
 
 	epoch_time.append(time.time() - start_time)
-	# print("Epoch %d loss %.2f add %.2f/%.2f rmv %.2f/%.2f"%(epoch+1,numpy.mean(loss_arr),numpy.mean(add_prc_arr),numpy.mean(add_rcl_arr),numpy.mean(rmv_prc_arr), numpy.mean(rmv_rcl_arr)))
 	scheduler.step()
 
 	print("Epoch %d train loss %.2f"%(epoch+1,numpy.mean(loss_arr)))
@@ -217,10 +212,6 @@ for epoch in range(CURRENT_EPOCH, MAX_EPOCH):
 	if VAL_AREA is not None and epoch % VAL_STEP == VAL_STEP - 1:
 		net.eval()
 		loss_arr = []
-		add_prc_arr = []
-		add_rcl_arr = []
-		rmv_prc_arr = []
-		rmv_rcl_arr = []
 		num_batches = int(len(val_inlier_points) / BATCH_SIZE)
 		for batch_id in tqdm(range(num_batches)):
 			start_idx = batch_id * BATCH_SIZE
