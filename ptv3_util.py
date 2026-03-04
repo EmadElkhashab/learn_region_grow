@@ -30,7 +30,7 @@ class RegionTransformerPTv3(nn.Module):
 		self.batch_size = batch_size
 		
 		self.ptv3 = PointTransformerV3(
-			in_channels=6,
+			in_channels=feature_dim-6,
 			order=("z", "z-trans", "hilbert", "hilbert-trans"),
 			#enable_rpe=True,
 			#enable_flash=False,
