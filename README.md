@@ -222,20 +222,6 @@ python test_region_grow_single_instance.py --num_points 512 --downsample 0.05 --
 
 The open3d viewer will open the point cloud. Shift+click to select a seed point, then close the viewer to start region growing. The segmented instance is saved as a PLY file. Edit the `SCAN_NAME` variable to change the input point cloud.
 
-## Results
-
-Segmentation results on S3DIS dataset
-
-![s3dis-results](figures/s3dis_results.png?raw=true)
-
-Segmentation results on ScanNet dataset
-
-![scannet-results](figures/scannet_results.png?raw=true)
-
-Segmentation results on Semantic KITTI dataset
-
-![kitti-results](figures/kitti_combined.png?raw=true)
-
 Citation
 --------
 
