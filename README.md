@@ -151,6 +151,77 @@ python train_region_grow.py --train-area kitti_train --val-area kitti_val --mult
 python test_region_grow.py --area kitti_val --resolution 0.3 --save
 ```
 
+## LRGNet with PointTransformerV3 (PTv3)
+
+The codebase includes an updated pipeline using [PointTransformerV3](https://arxiv.org/abs/2312.10035) as the backbone instead of the original PointNet-based architecture.
+
+### Additional Prerequisites
+
+1. torch
+2. [PointTransformerV3](https://github.com/Pointcept/PointTransformerV3) (provides `PointTransformerV3` in `model.py`)
+3. open3d (only required for `test_region_grow_instance.py`)
+
+### Training
+
+Train the PTv3-based model using staged data. Edit `TRAIN_AREA` and `VAL_AREA` inside the script to configure which areas to use.
+
+```bash
+python train_region_grow_ptv3.py
+```
+
+The training script saves checkpoints to `model_checkpoint.pth` and automatically resumes from the last checkpoint if one exists.
+
+### Testing
+
+Test PTv3-based LRGNet and measure accuracy metrics (NMI, AMI, ARS, Precision, Recall, IOU).
+
+```bash
+python test_region_grow.py --area 5 --save
+python test_region_grow.py --area scannet --save
+```
+
+### Benchmarking
+
+Benchmark inference timing per instance:
+
+```bash
+python benchmark_region_grow_inference.py --areas 1 --max_rooms_per_area 5
+```
+
+Benchmark inference timing broken down by object class:
+
+```bash
+python benchmark_region_grow_class.py --areas 1 --max_rooms_per_area 5
+```
+
+### Grid Size Testing
+
+Test the effect of the PTv3 `grid_size` voxelization parameter on segmentation quality. This sweeps over multiple grid sizes and reports metrics for each.
+
+```bash
+python test_grid_size.py --areas 1 --max_rooms_per_area 2 --grid_sizes 0.005,0.01,0.02,0.05
+```
+
+### Single Instance Segmentation
+
+Run region growing on a custom point cloud (PLY file) without ground truth labels. Requires open3d for visualization.
+
+```bash
+python test_region_grow_instance.py --num_points 512 --downsample 0.05 --scale 1.0
+```
+
+The input scan path can be changed by editing the `SCAN_NAME` variable in the script. Results are saved as individual PLY files per segment.
+
+### Single Instance Segmentation (Interactive)
+
+`test_region_grow_single_instance.py` is a refactored version that lets you interactively pick a seed point in the open3d viewer, then grows a single region from that seed.
+
+```bash
+python test_region_grow_single_instance.py --num_points 512 --downsample 0.05 --scale 1.0
+```
+
+The open3d viewer will open the point cloud. Shift+click to select a seed point, then close the viewer to start region growing. The segmented instance is saved as a PLY file. Edit the `SCAN_NAME` variable to change the input point cloud.
+
 ## Results
 
 Segmentation results on S3DIS dataset
