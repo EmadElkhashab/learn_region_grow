@@ -48,17 +48,17 @@ class RegionTransformerPTv3(nn.Module):
 		self.remove_mask = nn.Linear(128, 1)  
 		self.add_mask = nn.Linear(128, 1)  
 		
-	def forward(self, inlier_points, neighbour_points):
+	def forward(self, inlier_points, neighbour_points, grid_size=0.01):
 
 		inlier_feats = inlier_points['feat'].unsqueeze(0).reshape(self.batch_size, self.num_points, -1)
 		inlier_coords = inlier_points['coord'].unsqueeze(0).reshape(self.batch_size, self.num_points, -1)
 		neighbour_feats = neighbour_points['feat'].unsqueeze(0).reshape(self.batch_size, self.num_points, -1)
 		neighbour_coords = neighbour_points['coord'].unsqueeze(0).reshape(self.batch_size, self.num_points, -1)
-		
+
 		all_points_feat = torch.cat([inlier_feats, neighbour_feats], dim=1).reshape(self.batch_size*self.num_points*2, -1)
 		all_points_coords = torch.cat([inlier_coords, neighbour_coords], dim=1).reshape(self.batch_size*self.num_points*2, -1)
 		all_points_offsets = torch.tensor([(i+1)*self.num_points*2 for i in range(self.batch_size)]).to("cuda")
-		all_points_grid_size = 0.01 # Customizable
+		all_points_grid_size = grid_size
 		all_points = {
 			'feat': all_points_feat,
 			'coord': all_points_coords,
