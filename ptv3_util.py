@@ -75,3 +75,33 @@ class RegionTransformerPTv3(nn.Module):
 		add_mask_logits = self.add_mask(add_feats).squeeze()
 
 		return remove_mask_logits, add_mask_logits
+
+
+class PTv3Segmentation(nn.Module):
+	"""PTv3 for direct per-point instance segmentation via embeddings."""
+	def __init__(self, feature_dim=12, embed_dim=16):
+		super(PTv3Segmentation, self).__init__()
+		self.ptv3 = PointTransformerV3(
+			in_channels=feature_dim - 6,
+			order=("z", "z-trans", "hilbert", "hilbert-trans"),
+			stride=(2, 2, 2, 2),
+			enc_depths=(2, 2, 2, 6, 2),
+			enc_channels=(32, 64, 128, 256, 512),
+			enc_num_head=(2, 4, 8, 16, 32),
+			enc_patch_size=(128, 128, 128, 128, 128),
+			dec_depths=(2, 2, 2, 2),
+			dec_channels=(128, 128, 256, 256),
+			dec_num_head=(4, 4, 8, 16),
+			dec_patch_size=(128, 128, 128, 128),
+		)
+		self.embed_head = nn.Sequential(
+			nn.Linear(128, 64),
+			nn.ReLU(),
+			nn.Linear(64, embed_dim),
+		)
+
+	def forward(self, data, grid_size=0.01):
+		data['grid_size'] = grid_size
+		x = self.ptv3(data)
+		embeddings = self.embed_head(x['feat'])
+		return embeddings
